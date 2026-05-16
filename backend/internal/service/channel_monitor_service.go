@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -59,16 +60,27 @@ type ChannelMonitorRepository interface {
 
 // ChannelMonitorService 渠道监控管理服务。
 type ChannelMonitorService struct {
-	repo      ChannelMonitorRepository
-	encryptor SecretEncryptor
+	repo                  ChannelMonitorRepository
+	encryptor             SecretEncryptor
+	allowInsecureEndpoint bool
+	allowPrivateEndpoint  bool
 	// scheduler 由 wire 通过 SetScheduler 注入；CRUD 后调用对应钩子即时同步任务。
 	// 测试或未注入场景下保持 nil，所有钩子调用变为 no-op。
 	scheduler MonitorScheduler
 }
 
 // NewChannelMonitorService 创建渠道监控服务实例。
-func NewChannelMonitorService(repo ChannelMonitorRepository, encryptor SecretEncryptor) *ChannelMonitorService {
-	return &ChannelMonitorService{repo: repo, encryptor: encryptor}
+func NewChannelMonitorService(
+	repo ChannelMonitorRepository,
+	encryptor SecretEncryptor,
+	cfg *config.Config,
+) *ChannelMonitorService {
+	return &ChannelMonitorService{
+		repo:                  repo,
+		encryptor:             encryptor,
+		allowInsecureEndpoint: channelMonitorAllowInsecureEndpoint(cfg),
+		allowPrivateEndpoint:  channelMonitorAllowPrivateEndpoint(cfg),
+	}
 }
 
 // ---------- CRUD ----------
@@ -104,7 +116,7 @@ func (s *ChannelMonitorService) Get(ctx context.Context, id int64) (*ChannelMoni
 
 // Create 创建监控（内部加密 api_key）。
 func (s *ChannelMonitorService) Create(ctx context.Context, p ChannelMonitorCreateParams) (*ChannelMonitor, error) {
-	if err := validateCreateParams(p); err != nil {
+	if err := s.validateCreateParams(p); err != nil {
 		return nil, err
 	}
 	if err := validateBodyModeParams(p.BodyOverrideMode, p.BodyOverride); err != nil {
@@ -146,14 +158,17 @@ func (s *ChannelMonitorService) Create(ctx context.Context, p ChannelMonitorCrea
 }
 
 // validateCreateParams 把 Create 入参的所有校验聚拢为一个函数，避免 Create 主体超过 30 行。
-func validateCreateParams(p ChannelMonitorCreateParams) error {
+func (s *ChannelMonitorService) validateCreateParams(p ChannelMonitorCreateParams) error {
 	if err := validateProvider(p.Provider); err != nil {
 		return err
 	}
 	if err := validateInterval(p.IntervalSeconds); err != nil {
 		return err
 	}
-	if err := validateEndpoint(p.Endpoint); err != nil {
+	if err := validateEndpoint(p.Endpoint, endpointValidationOptions{
+		AllowInsecureHTTP: s.allowInsecureEndpoint,
+		AllowPrivateHosts: s.allowPrivateEndpoint,
+	}); err != nil {
 		return err
 	}
 	if strings.TrimSpace(p.APIKey) == "" {
@@ -171,7 +186,7 @@ func (s *ChannelMonitorService) Update(ctx context.Context, id int64, p ChannelM
 	if err != nil {
 		return nil, err
 	}
-	if err := applyMonitorUpdate(existing, p); err != nil {
+	if err := s.applyMonitorUpdate(existing, p); err != nil {
 		return nil, err
 	}
 
@@ -294,13 +309,14 @@ func (s *ChannelMonitorService) runChecksConcurrent(ctx context.Context, m *Chan
 	results := make([]*CheckResult, len(models))
 
 	// ping 共享一次，所有模型记录同一个 ping 延迟。
-	pingMs := pingEndpointOrigin(ctx, m.Endpoint)
+	pingMs := pingEndpointOrigin(ctx, m.Endpoint, s.allowPrivateEndpoint)
 
 	// 所有模型共用同一份 CheckOptions（来自监控的快照字段）。
 	opts := &CheckOptions{
-		ExtraHeaders:     m.ExtraHeaders,
-		BodyOverrideMode: m.BodyOverrideMode,
-		BodyOverride:     m.BodyOverride,
+		ExtraHeaders:      m.ExtraHeaders,
+		BodyOverrideMode:  m.BodyOverrideMode,
+		BodyOverride:      m.BodyOverride,
+		AllowPrivateHosts: s.allowPrivateEndpoint,
 	}
 
 	var eg errgroup.Group
@@ -468,7 +484,7 @@ func (s *ChannelMonitorService) decryptInPlace(m *ChannelMonitor) {
 //
 // 行数稍超过 30：这是逐字段平铺的 dispatcher，每个 if 都是 1-3 行的"非 nil 则覆盖"模式，
 // 拆分反而会增加跳转噪音、影响可读性，故保留为单函数。
-func applyMonitorUpdate(existing *ChannelMonitor, p ChannelMonitorUpdateParams) error {
+func (s *ChannelMonitorService) applyMonitorUpdate(existing *ChannelMonitor, p ChannelMonitorUpdateParams) error {
 	if p.Name != nil {
 		existing.Name = strings.TrimSpace(*p.Name)
 	}
@@ -479,7 +495,10 @@ func applyMonitorUpdate(existing *ChannelMonitor, p ChannelMonitorUpdateParams) 
 		existing.Provider = *p.Provider
 	}
 	if p.Endpoint != nil {
-		if err := validateEndpoint(*p.Endpoint); err != nil {
+		if err := validateEndpoint(*p.Endpoint, endpointValidationOptions{
+			AllowInsecureHTTP: s.allowInsecureEndpoint,
+			AllowPrivateHosts: s.allowPrivateEndpoint,
+		}); err != nil {
 			return err
 		}
 		existing.Endpoint = normalizeEndpoint(*p.Endpoint)

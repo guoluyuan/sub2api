@@ -109,16 +109,24 @@ func isPrivateOrLoopbackHost(ctx context.Context, hostname string) (bool, error)
 	return false, nil
 }
 
-// safeDialContext 在真实 dial 前再次校验目标 IP，防止 DNS rebinding。
-// 解析 hostname 后逐个 IP 尝试连接，命中私网即拒绝（即便 validateEndpoint 时返回的是公网 IP）。
+// safeDialContext checks the resolved IP before dialing to prevent DNS rebinding.
+// Private ranges are rejected unless the caller explicitly enables them.
 func safeDialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	return safeDialContextWithPolicy(ctx, network, address, false)
+}
+
+func privateHostDialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	return safeDialContextWithPolicy(ctx, network, address, true)
+}
+
+func safeDialContextWithPolicy(ctx context.Context, network, address string, allowPrivate bool) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
 		return nil, err
 	}
-	// 字面量 IP 走快速路径。
+	// Fast path for literal IP addresses.
 	if ip := net.ParseIP(host); ip != nil {
-		if isPrivateIP(ip) {
+		if !allowPrivate && isPrivateIP(ip) {
 			return nil, &net.AddrError{Err: "blocked by SSRF policy", Addr: address}
 		}
 		return monitorDialer.DialContext(ctx, network, address)
@@ -135,7 +143,7 @@ func safeDialContext(ctx context.Context, network, address string) (net.Conn, er
 	}
 	var lastErr error
 	for _, a := range addrs {
-		if isPrivateIP(a.IP) {
+		if !allowPrivate && isPrivateIP(a.IP) {
 			lastErr = &net.AddrError{Err: "blocked by SSRF policy", Addr: a.IP.String()}
 			continue
 		}

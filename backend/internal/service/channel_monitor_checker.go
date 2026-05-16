@@ -18,16 +18,24 @@ import (
 
 // monitorHTTPClient 共享一个 http.Client，避免每次检测重建 transport。
 // 自定义 Transport 在 dial 时强制再次校验 IP，防止 DNS rebinding 绕过 validateEndpoint。
-var monitorHTTPClient = newSSRFSafeHTTPClient(monitorRequestTimeout)
+var monitorHTTPClient = newSSRFSafeHTTPClient(monitorRequestTimeout, false)
+
+var monitorPrivateHTTPClient = newSSRFSafeHTTPClient(monitorRequestTimeout, true)
 
 // monitorPingHTTPClient 用于 endpoint origin 的 HEAD ping，超时更短。
-var monitorPingHTTPClient = newSSRFSafeHTTPClient(monitorPingTimeout)
+var monitorPingHTTPClient = newSSRFSafeHTTPClient(monitorPingTimeout, false)
+
+var monitorPrivatePingHTTPClient = newSSRFSafeHTTPClient(monitorPingTimeout, true)
 
 // newSSRFSafeHTTPClient 返回一个使用 safeDialContext 的 http.Client。
 // 仅供监控模块对外发起请求使用——所有目标都应是公网 endpoint。
-func newSSRFSafeHTTPClient(timeout time.Duration) *http.Client {
+func newSSRFSafeHTTPClient(timeout time.Duration, allowPrivate bool) *http.Client {
+	dialContext := safeDialContext
+	if allowPrivate {
+		dialContext = privateHostDialContext
+	}
 	tr := &http.Transport{
-		DialContext:           safeDialContext,
+		DialContext:           dialContext,
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          16,
 		IdleConnTimeout:       monitorIdleConnTimeout,
@@ -47,6 +55,8 @@ type CheckOptions struct {
 	// BodyOverride 在 merge 模式下做浅合并（key 命中黑名单时静默丢弃），
 	// 在 replace 模式下直接当作完整 body。
 	BodyOverride map[string]any
+	// AllowPrivateHosts allows monitor requests to reach private IP ranges.
+	AllowPrivateHosts bool
 }
 
 // runCheckForModel 对单个 (provider, model) 做一次完整检测。
@@ -126,7 +136,7 @@ func bodyOverrideMode(opts *CheckOptions) string {
 
 // pingEndpointOrigin 对 endpoint 的 origin (scheme://host) 发起 HEAD 请求，返回耗时。
 // 失败时返回 nil（不影响主状态判定）。
-func pingEndpointOrigin(ctx context.Context, endpoint string) *int {
+func pingEndpointOrigin(ctx context.Context, endpoint string, allowPrivateHosts bool) *int {
 	origin, err := extractOrigin(endpoint)
 	if err != nil || origin == "" {
 		return nil
@@ -135,8 +145,12 @@ func pingEndpointOrigin(ctx context.Context, endpoint string) *int {
 	if err != nil {
 		return nil
 	}
+	client := monitorPingHTTPClient
+	if allowPrivateHosts {
+		client = monitorPrivatePingHTTPClient
+	}
 	start := time.Now()
-	resp, err := monitorPingHTTPClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil
 	}
@@ -241,7 +255,7 @@ func callProvider(ctx context.Context, provider, endpoint, apiKey, model, prompt
 	}
 	headers := mergeHeaders(adapter.buildHeaders(apiKey), opts)
 	full := joinURL(endpoint, adapter.buildPath(model))
-	respBytes, status, err := postRawJSON(ctx, full, body, headers)
+	respBytes, status, err := postRawJSON(ctx, full, body, headers, opts)
 	if err != nil {
 		return "", "", status, err
 	}
@@ -328,7 +342,13 @@ var bodyMergeKeyDenyList = map[string]map[string]bool{
 
 // postRawJSON 发送 POST + 已序列化好的 JSON 字节，限制响应体大小，返回响应字节、HTTP status、错误。
 // adapter 自行 marshal 是为了精确控制字段顺序与类型，所以这里直接收 []byte 而不是 any。
-func postRawJSON(ctx context.Context, fullURL string, payload []byte, headers map[string]string) ([]byte, int, error) {
+func postRawJSON(
+	ctx context.Context,
+	fullURL string,
+	payload []byte,
+	headers map[string]string,
+	opts *CheckOptions,
+) ([]byte, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, bytes.NewReader(payload))
 	if err != nil {
 		return nil, 0, fmt.Errorf("build request: %w", err)
@@ -339,7 +359,11 @@ func postRawJSON(ctx context.Context, fullURL string, payload []byte, headers ma
 		req.Header.Set(k, v)
 	}
 
-	resp, err := monitorHTTPClient.Do(req)
+	client := monitorHTTPClient
+	if opts != nil && opts.AllowPrivateHosts {
+		client = monitorPrivateHTTPClient
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, 0, fmt.Errorf("do request: %w", err)
 	}

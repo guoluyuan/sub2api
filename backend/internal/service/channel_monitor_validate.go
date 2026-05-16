@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/url"
 	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/config"
 )
 
 // 渠道监控参数校验与归一化辅助函数。
@@ -11,6 +13,11 @@ import (
 
 // validateProvider 校验 provider 字符串。
 // 唯一来源于 providerAdapters：新增 provider 只需要在 channel_monitor_checker.go 注册 adapter。
+type endpointValidationOptions struct {
+	AllowInsecureHTTP bool
+	AllowPrivateHosts bool
+}
+
 func validateProvider(p string) error {
 	if !isSupportedProvider(p) {
 		return ErrChannelMonitorInvalidProvider
@@ -27,14 +34,14 @@ func validateInterval(sec int) error {
 }
 
 // validateEndpoint 校验 endpoint：
-//   - scheme 强制 https（拒绝 http，避免明文凭证 + 部分 SSRF 利用面）
+//   - scheme 默认强制 https；配置允许 insecure endpoint 时接受 http
 //   - 必须为 origin（无 path/query/fragment），防止用户填 https://api.openai.com/v1
 //     导致 joinURL 拼出 /v1/v1/chat/completions
 //   - hostname 不能是 localhost/metadata 等已知元数据 hostname
 //   - 解析所有 IP，任一落在 loopback/RFC1918/link-local/ULA 段即拒绝（防 SSRF）
 //
 // 错误信息不暴露具体 IP / hostname，避免泄露内网拓扑。
-func validateEndpoint(ep string) error {
+func validateEndpoint(ep string, opts endpointValidationOptions) error {
 	ep = strings.TrimSpace(ep)
 	if ep == "" {
 		return ErrChannelMonitorInvalidEndpoint
@@ -43,7 +50,7 @@ func validateEndpoint(ep string) error {
 	if err != nil {
 		return ErrChannelMonitorInvalidEndpoint
 	}
-	if u.Scheme != "https" {
+	if !isAllowedEndpointScheme(u.Scheme, opts.AllowInsecureHTTP) {
 		return ErrChannelMonitorEndpointScheme
 	}
 	if u.Host == "" {
@@ -54,6 +61,10 @@ func validateEndpoint(ep string) error {
 	}
 	if u.RawQuery != "" || u.Fragment != "" {
 		return ErrChannelMonitorEndpointPath
+	}
+
+	if opts.AllowPrivateHosts {
+		return nil
 	}
 
 	hostname := u.Hostname()
@@ -67,6 +78,31 @@ func validateEndpoint(ep string) error {
 		return ErrChannelMonitorEndpointPrivate
 	}
 	return nil
+}
+
+func isAllowedEndpointScheme(scheme string, allowInsecureHTTP bool) bool {
+	switch strings.ToLower(scheme) {
+	case "https":
+		return true
+	case "http":
+		return allowInsecureHTTP
+	default:
+		return false
+	}
+}
+
+func channelMonitorAllowInsecureEndpoint(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	return cfg.Security.URLAllowlist.AllowInsecureHTTP
+}
+
+func channelMonitorAllowPrivateEndpoint(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	return cfg.Security.URLAllowlist.AllowPrivateHosts
 }
 
 // normalizeEndpoint 去除前后空白与末尾 `/`，保证存储统一为 origin。
