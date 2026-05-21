@@ -119,7 +119,7 @@ func (s *ChannelMonitorService) Create(ctx context.Context, p ChannelMonitorCrea
 	if err := s.validateCreateParams(p); err != nil {
 		return nil, err
 	}
-	if err := validateBodyModeParams(p.BodyOverrideMode, p.BodyOverride); err != nil {
+	if err := validateBodyModeForProtocol(p.Provider, p.APIMode, p.BodyOverrideMode, p.BodyOverride); err != nil {
 		return nil, err
 	}
 	if err := validateExtraHeaders(p.ExtraHeaders); err != nil {
@@ -132,6 +132,7 @@ func (s *ChannelMonitorService) Create(ctx context.Context, p ChannelMonitorCrea
 	m := &ChannelMonitor{
 		Name:             strings.TrimSpace(p.Name),
 		Provider:         p.Provider,
+		APIMode:          defaultAPIMode(p.APIMode),
 		Endpoint:         normalizeEndpoint(p.Endpoint),
 		APIKey:           encrypted, // 注意：传入 repository 时该字段为密文
 		PrimaryModel:     strings.TrimSpace(p.PrimaryModel),
@@ -160,6 +161,9 @@ func (s *ChannelMonitorService) Create(ctx context.Context, p ChannelMonitorCrea
 // validateCreateParams 把 Create 入参的所有校验聚拢为一个函数，避免 Create 主体超过 30 行。
 func (s *ChannelMonitorService) validateCreateParams(p ChannelMonitorCreateParams) error {
 	if err := validateProvider(p.Provider); err != nil {
+		return err
+	}
+	if err := validateAPIMode(p.Provider, p.APIMode); err != nil {
 		return err
 	}
 	if err := validateInterval(p.IntervalSeconds); err != nil {
@@ -313,6 +317,7 @@ func (s *ChannelMonitorService) runChecksConcurrent(ctx context.Context, m *Chan
 
 	// 所有模型共用同一份 CheckOptions（来自监控的快照字段）。
 	opts := &CheckOptions{
+		APIMode:           m.APIMode,
 		ExtraHeaders:      m.ExtraHeaders,
 		BodyOverrideMode:  m.BodyOverrideMode,
 		BodyOverride:      m.BodyOverride,
@@ -485,6 +490,7 @@ func (s *ChannelMonitorService) decryptInPlace(m *ChannelMonitor) {
 // 行数稍超过 30：这是逐字段平铺的 dispatcher，每个 if 都是 1-3 行的"非 nil 则覆盖"模式，
 // 拆分反而会增加跳转噪音、影响可读性，故保留为单函数。
 func (s *ChannelMonitorService) applyMonitorUpdate(existing *ChannelMonitor, p ChannelMonitorUpdateParams) error {
+	providerChanged := false
 	if p.Name != nil {
 		existing.Name = strings.TrimSpace(*p.Name)
 	}
@@ -493,6 +499,7 @@ func (s *ChannelMonitorService) applyMonitorUpdate(existing *ChannelMonitor, p C
 			return err
 		}
 		existing.Provider = *p.Provider
+		providerChanged = true
 	}
 	if p.Endpoint != nil {
 		if err := validateEndpoint(*p.Endpoint, endpointValidationOptions{
@@ -521,11 +528,11 @@ func (s *ChannelMonitorService) applyMonitorUpdate(existing *ChannelMonitor, p C
 		}
 		existing.IntervalSeconds = *p.IntervalSeconds
 	}
-	return applyMonitorAdvancedUpdate(existing, p)
+	return applyMonitorAdvancedUpdate(existing, p, providerChanged)
 }
 
 // applyMonitorAdvancedUpdate 处理自定义请求快照相关字段，从 applyMonitorUpdate 拆出避免过长。
-func applyMonitorAdvancedUpdate(existing *ChannelMonitor, p ChannelMonitorUpdateParams) error {
+func applyMonitorAdvancedUpdate(existing *ChannelMonitor, p ChannelMonitorUpdateParams, providerChanged bool) error {
 	if p.ClearTemplate {
 		existing.TemplateID = nil
 	} else if p.TemplateID != nil {
@@ -538,6 +545,15 @@ func applyMonitorAdvancedUpdate(existing *ChannelMonitor, p ChannelMonitorUpdate
 		}
 		existing.ExtraHeaders = emptyHeadersIfNil(*p.ExtraHeaders)
 	}
+	newAPIMode := defaultAPIMode(existing.APIMode)
+	if p.APIMode != nil {
+		newAPIMode = defaultAPIMode(*p.APIMode)
+	} else if existing.Provider != MonitorProviderOpenAI {
+		newAPIMode = MonitorAPIModeChatCompletions
+	}
+	if err := validateAPIMode(existing.Provider, newAPIMode); err != nil {
+		return err
+	}
 	// BodyOverrideMode / BodyOverride 联合校验，和模板一致。
 	newMode := existing.BodyOverrideMode
 	newBody := existing.BodyOverride
@@ -547,12 +563,13 @@ func applyMonitorAdvancedUpdate(existing *ChannelMonitor, p ChannelMonitorUpdate
 	if p.BodyOverride != nil {
 		newBody = *p.BodyOverride
 	}
-	if p.BodyOverrideMode != nil || p.BodyOverride != nil {
-		if err := validateBodyModeParams(newMode, newBody); err != nil {
+	if providerChanged || p.APIMode != nil || p.BodyOverrideMode != nil || p.BodyOverride != nil {
+		if err := validateBodyModeForProtocol(existing.Provider, newAPIMode, newMode, newBody); err != nil {
 			return err
 		}
 		existing.BodyOverrideMode = defaultBodyMode(newMode)
 		existing.BodyOverride = newBody
 	}
+	existing.APIMode = newAPIMode
 	return nil
 }
