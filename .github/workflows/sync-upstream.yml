@@ -6,8 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  actions: write
+  contents: read
 
 concurrency:
   group: sync-upstream
@@ -17,10 +16,20 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
+      - name: Validate sync token
+        env:
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SYNC_TOKEN" ]; then
+            echo "::error::SYNC_TOKEN secret is required. Create a token with repo and workflow scopes."
+            exit 1
+          fi
+
       - name: Checkout fork
         uses: actions/checkout@v6
         with:
-          token: \$\{\{ secrets.GITHUB_TOKEN \}\}
+          token: ${{ secrets.SYNC_TOKEN }}
           fetch-depth: 0
 
       - name: Sync upstream main
@@ -32,7 +41,7 @@ jobs:
           git config user.email "guoluyuan-sync[bot]@users.noreply.github.com"
 
           git remote add upstream https://github.com/Wei-Shaw/sub2api.git
-          git fetch upstream main --tags
+          git fetch upstream main
 
           BEFORE=$(git rev-parse HEAD)
           git merge --no-edit upstream/main
@@ -61,25 +70,9 @@ jobs:
             exit 0
           fi
 
-          MESSAGE=$(git tag -l --format='%(contents)' "$TAG" || true)
-          if [ -z "$MESSAGE" ]; then
-            MESSAGE="Sync upstream ${TAG}"
-          fi
-
-          git tag -a "$TAG" -m "$MESSAGE" HEAD
+          git log -1 --pretty=%B upstream/main > .release-tag-message.txt
+          git tag -a "$TAG" -F .release-tag-message.txt HEAD
           git push origin "$TAG"
 
           echo "created=true" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-
-      - name: Trigger release workflow
-        if: steps.tag.outputs.created == 'true'
-        env:
-          GH_token: \$\{\{ secrets.GITHUB_TOKEN \}\}
-          TAG: ${{ steps.tag.outputs.tag }}
-        run: |
-          gh workflow run release.yml \
-            --repo "${GITHUB_REPOSITORY}" \
-            --ref main \
-            -f tag="${TAG}" \
-            -f simple_release=false
