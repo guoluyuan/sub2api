@@ -17,19 +17,10 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Generate GitHub App token
-        id: app-token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ secrets.SYNC_APP_ID }}
-          private-key: ${{ secrets.SYNC_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: ${{ github.event.repository.name }}
-
       - name: Checkout fork
         uses: actions/checkout@v6
         with:
-          token: ${{ steps.app-token.outputs.token }}
+          token: \$\{\{ secrets.GITHUB_TOKEN \}\}
           fetch-depth: 0
 
       - name: Sync upstream main
@@ -84,7 +75,7 @@ jobs:
       - name: Trigger release workflow
         if: steps.tag.outputs.created == 'true'
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_token: \$\{\{ secrets.GITHUB_TOKEN \}\}
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           gh workflow run release.yml \
