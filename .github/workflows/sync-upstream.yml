@@ -73,7 +73,7 @@ jobs:
           UPSTREAM_TAG_REF="refs/upstream-tags/${TAG}"
           git update-ref -d "$UPSTREAM_TAG_REF" 2>/dev/null || true
 
-          if ! git fetch upstream "refs/tags/${TAG}:${UPSTREAM_TAG_REF}"; then
+          if ! git fetch --no-tags upstream "refs/tags/${TAG}^{}:${UPSTREAM_TAG_REF}"; then
             echo "::error::Upstream tag ${TAG} not found; cannot copy release notes."
             exit 1
           fi
