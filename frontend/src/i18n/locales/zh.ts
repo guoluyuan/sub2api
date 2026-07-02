@@ -252,6 +252,8 @@ export default {
     loading: '加载中...',
     submitting: '提交中...',
     justNow: '刚刚',
+    peakRateTooltip: '高峰倍率：{window}',
+    peakRateImageNote: '；token 计费的图片 token 同样适用，图片按次计费不受高峰影响',
     save: '保存',
     saved: '保存成功',
     deleted: '删除成功',
@@ -999,6 +1001,21 @@ export default {
     exportExcelFailed: '使用数据导出失败',
     imageUnit: '张',
     userAgent: 'User-Agent',
+    ipGeo: {
+      fetch: '获取地区',
+      fetching: '获取中...',
+      failed: '获取失败',
+      private: '内网地址',
+      refreshTitle: '刷新地区信息',
+      batchFetch: '批量获取地区',
+      batchFetching: '获取中...',
+      pending: '{count} 个 IP 待获取地区',
+      batchFailed: '批量获取地区信息失败',
+      detailOrg: '运营商',
+      detailTimezone: '时区',
+      detailAccuracy: '定位精度',
+      detailCoordinates: '坐标',
+    },
     tabs: { usage: '用量明细', errors: '错误请求' },
     errors: {
       time: '时间', model: '模型', endpoint: '端点', status: '状态码',
@@ -2185,6 +2202,7 @@ export default {
       editGroup: '编辑分组',
       deleteGroup: '删除分组',
       sortOrder: '排序',
+      columnSettings: '列设置',
       sortOrderHint: '拖拽分组调整显示顺序，排在前面的分组会优先显示',
       sortOrderUpdated: '排序已更新',
       failedToUpdateSortOrder: '更新排序失败',
@@ -2361,6 +2379,13 @@ export default {
         modeHint: '默认关闭独立倍率时，图片费用 = 图片价格 × 当前分组有效倍率；开启独立倍率后，图片费用 = 图片价格 × 生图独立倍率。',
         finalPricePreview: '最终单张价格预览',
         notConfigured: '未配置'
+      },
+      peakRate: {
+        enable: '启用高峰倍率',
+        peakStart: '高峰开始',
+        peakEnd: '高峰结束',
+        peakMultiplier: '高峰倍率',
+        multiplierHint: '作用于 token 计费倍率；token 计费的图片 token 同样适用，0 表示高峰 token 请求按 0 倍计费'
       },
       modelsList: {
         title: '自定义 /v1/models 模型列表',
@@ -7445,6 +7470,7 @@ export default {
     planFeatures: '功能特性',
     planCard: {
       rate: '倍率',
+      peakRate: '高峰倍率',
       dailyLimit: '日限额',
       weeklyLimit: '周限额',
       monthlyLimit: '月限额',
