@@ -37,7 +37,7 @@ func (h *AccountHandler) registerCodexAgentIdentityEntry(
 	entry codexImportEntry,
 ) codexImportEntry {
 	if h == nil || h.agentIdentityRegistration == nil {
-		entry.Err = errors.New("Agent Identity 注册服务不可用")
+		entry.Err = errors.New("agent identity 注册服务不可用")
 		return entry
 	}
 	accessToken, err := agentIdentitySessionAccessToken(entry.Value)
@@ -69,7 +69,7 @@ func agentIdentitySessionAccessToken(value any) (string, error) {
 		[]string{"tokens", "access_token"},
 	)
 	if strings.TrimSpace(accessToken) == "" {
-		return "", errors.New("Session JSON 缺少 accessToken")
+		return "", errors.New("session JSON 缺少 accessToken")
 	}
 	return strings.TrimSpace(accessToken), nil
 }
