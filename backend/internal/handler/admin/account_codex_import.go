@@ -39,6 +39,7 @@ type CodexSessionImportRequest struct {
 	UpdateExisting          *bool          `json:"update_existing"`
 	SkipDefaultGroupBind    *bool          `json:"skip_default_group_bind"`
 	ConfirmMixedChannelRisk *bool          `json:"confirm_mixed_channel_risk"`
+	RegisterAgentIdentity   bool           `json:"register_agent_identity"`
 }
 
 type CodexSessionImportResult struct {
@@ -69,6 +70,7 @@ type CodexSessionImportMessage struct {
 type codexImportEntry struct {
 	Index int
 	Value any
+	Err   error
 }
 
 type codexImportAccount struct {
@@ -152,7 +154,11 @@ func (h *AccountHandler) ImportCodexSession(c *gin.Context) {
 	}
 
 	executeAdminIdempotentJSON(c, "admin.accounts.import_codex_session", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		return h.importCodexSessions(ctx, req, entries)
+		importEntries := entries
+		if req.RegisterAgentIdentity {
+			importEntries = h.registerCodexAgentIdentityEntries(ctx, req, entries)
+		}
+		return h.importCodexSessions(ctx, req, importEntries)
 	})
 }
 
@@ -190,6 +196,9 @@ func (h *AccountHandler) importCodexSessions(ctx context.Context, req CodexSessi
 	seenIdentity := map[string]codexSeenIdentity{}
 	for _, entry := range entries {
 		item, err := normalizeCodexImportEntry(entry)
+		if entry.Err != nil {
+			err = entry.Err
+		}
 		if err != nil {
 			result.Failed++
 			result.Items = append(result.Items, CodexSessionImportItem{

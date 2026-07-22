@@ -214,9 +214,9 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
   })
 
   it.each([
-    ['camelCase', { authMode: 'agentIdentity', agentIdentity: { agentRuntimeId: 'runtime' } }],
-    ['nested identity without auth_mode', { agent_identity: { agent_runtime_id: 'runtime' } }],
-  ])('accepts backend-compatible %s Agent Identity imports', async (_name, content) => {
+    ['camelCase', { accessToken: 'header.payload.signature' }],
+    ['snake_case', { access_token: 'header.payload.signature' }],
+  ])('registers Agent Identity from %s Session JSON', async (_name, content) => {
     const wrapper = await openCodexImportStep()
     const flow = wrapper.getComponent(OAuthAuthorizationFlowStub)
     flow.vm.inputMethod = 'agent_identity'
@@ -225,6 +225,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await flushPromises()
 
     expect(importCodexSessionMock).toHaveBeenCalledTimes(1)
+    expect(importCodexSessionMock.mock.calls[0]?.[0]?.register_agent_identity).toBe(true)
   })
 
   it('sends true explicitly when OpenAI long-context billing is enabled', async () => {

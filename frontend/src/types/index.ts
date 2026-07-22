@@ -1358,6 +1358,7 @@ export interface CodexSessionImportRequest {
   update_existing?: boolean
   skip_default_group_bind?: boolean
   confirm_mixed_channel_risk?: boolean
+  register_agent_identity?: boolean
 }
 
 export interface OpenAICodexPATCreateRequest {

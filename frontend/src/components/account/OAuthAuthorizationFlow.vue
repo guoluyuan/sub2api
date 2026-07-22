@@ -357,11 +357,9 @@
                 ></path>
               </svg>
               <Icon v-else name="sparkles" size="sm" class="mr-2" />
-              {{
-                loading
-                  ? t('admin.accounts.oauth.openai.validating')
-                  : t('admin.accounts.oauth.openai.codexSessionImportAndCreate')
-              }}
+              {{ t(isAgentIdentityInput
+                ? (loading ? 'admin.accounts.oauth.openai.agentIdentityRegistering' : 'admin.accounts.oauth.openai.agentIdentityRegisterAndCreate')
+                : (loading ? 'admin.accounts.oauth.openai.validating' : 'admin.accounts.oauth.openai.codexSessionImportAndCreate')) }}
             </button>
           </div>
         </div>
