@@ -257,7 +257,7 @@ Nginx 默认会丢弃名称中含下划线的请求头（如 `session_id`），�
 #### 安装步骤
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/guoluyuan/sub2api/main/deploy/install.sh | sudo bash
 ```
 
 脚本会自动：
@@ -307,7 +307,7 @@ sudo journalctl -u sub2api -f
 sudo systemctl restart sub2api
 
 # 卸载
-curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/install.sh | sudo bash -s -- uninstall -y
+curl -sSL https://raw.githubusercontent.com/guoluyuan/sub2api/main/deploy/install.sh | sudo bash -s -- uninstall -y
 ```
 
 ---
@@ -330,7 +330,7 @@ curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/install
 mkdir -p sub2api-deploy && cd sub2api-deploy
 
 # 下载并运行部署准备脚本
-curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/docker-deploy.sh | bash
+curl -sSL https://raw.githubusercontent.com/guoluyuan/sub2api/main/deploy/docker-deploy.sh | bash
 
 # 启动服务
 docker compose up -d
@@ -352,7 +352,7 @@ docker compose logs -f sub2api
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/Wei-Shaw/sub2api.git
+git clone https://github.com/guoluyuan/sub2api.git
 cd sub2api/deploy
 
 # 2. 复制环境配置文件
@@ -422,18 +422,6 @@ docker compose -f docker-compose.local.yml logs -f sub2api
 
 **推荐：** 使用 `docker-compose.local.yml`（脚本部署）以便更轻松地管理数据。
 
-#### 启用“数据管理”功能（datamanagementd）
-
-如需启用管理后台“数据管理”，需要额外部署宿主机数据管理进程 `datamanagementd`。
-
-关键点：
-
-- 主进程固定探测：`/tmp/sub2api-datamanagement.sock`
-- 只有该 Socket 可连通时，数据管理功能才会开启
-- Docker 场景需将宿主机 Socket 挂载到容器同路径
-
-详细部署步骤见：`deploy/DATAMANAGEMENTD_CN.md`
-
 #### 访问
 
 在浏览器中打开 `http://你的服务器IP:8080`
@@ -494,7 +482,7 @@ rm -rf data/ postgres_data/ redis_data/
 Apple 芯片 Mac 在 macOS 26 上可使用 Apple `container` 1.1.0 或更高版本运行完整的 Sub2API、PostgreSQL 和 Redis：
 
 ```bash
-git clone https://github.com/Wei-Shaw/sub2api.git
+git clone https://github.com/guoluyuan/sub2api.git
 cd sub2api/deploy
 ./apple-container.sh init
 ./apple-container.sh up
@@ -520,7 +508,7 @@ cd sub2api/deploy
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/Wei-Shaw/sub2api.git
+git clone https://github.com/guoluyuan/sub2api.git
 cd sub2api
 
 # 2. 安装 pnpm（如果还没有安装）
@@ -564,6 +552,7 @@ database:
 redis:
   host: "localhost"
   port: 6379
+  username: ""
   password: ""
 
 jwt:
@@ -582,27 +571,6 @@ default:
 > ⚠️ 当前 Sora 相关功能因上游接入与媒体链路存在技术问题，暂时不可用。
 > 现阶段请勿在生产环境依赖 Sora 能力。
 > 文档中的 `gateway.sora_*` 配置仅作预留，待技术问题修复后再恢复可用。
-
-### Sora 媒体签名 URL（功能恢复后可选）
-
-当配置 `gateway.sora_media_signing_key` 且 `gateway.sora_media_signed_url_ttl_seconds > 0` 时，网关会将 Sora 输出的媒体地址改写为临时签名 URL（`/sora/media-signed/...`）。这样无需 API Key 即可在浏览器中直接访问，且具备过期控制与防篡改能力（签名包含 path + query）。
-
-```yaml
-gateway:
-  # /sora/media 是否强制要求 API Key（默认 false）
-  sora_media_require_api_key: false
-  # 媒体临时签名密钥（为空则禁用签名）
-  sora_media_signing_key: "your-signing-key"
-  # 临时签名 URL 有效期（秒）
-  sora_media_signed_url_ttl_seconds: 900
-```
-
-> 若未配置签名密钥，`/sora/media-signed` 将返回 503。  
-> 如需更严格的访问控制，可将 `sora_media_require_api_key` 设为 true，仅允许携带 API Key 的 `/sora/media` 访问。
-
-访问策略说明：
-- `/sora/media`：内部调用或客户端携带 API Key 才能下载
-- `/sora/media-signed`：外部可访问，但有签名 + 过期控制
 
 `config.yaml` 还支持以下安全相关配置：
 
@@ -625,14 +593,6 @@ SECURITY_FORWARDED_CLIENT_IP_HEADERS=True-Client-IP,X-CDN-Client-IP
 ```
 
 请求头名称会经过合法性校验、规范化和大小写无关去重。管理员可在安全设置中动态更新列表，无需重启；新安装会持久化 YAML/环境变量默认值，旧安装缺少数据库字段时会自动回填。关闭旧版接管后，自定义头和内置原始转发头均被忽略，只使用 `server.trusted_proxies`。开启接管时必须限制源站仅允许 CDN/代理访问，并确保边缘代理覆盖所有受信客户端 IP 请求头。完整迁移规则和信任边界见 [`deploy/EDGE_SECURITY.md`](deploy/EDGE_SECURITY.md)。
-
-**网关防御纵深建议（重点）**
-
-- `gateway.upstream_response_read_max_bytes`：限制非流式上游响应读取大小（默认 `8MB`），用于防止异常响应导致内存放大。
-- `gateway.proxy_probe_response_read_max_bytes`：限制代理探测响应读取大小（默认 `1MB`）。
-- `gateway.gemini_debug_response_headers`：默认 `false`，仅在排障时短时开启，避免高频请求日志开销。
-- `/auth/register`、`/auth/login`、`/auth/login/2fa`、`/auth/send-verify-code` 已提供服务端兜底限流（Redis 故障时 fail-close）。
-- 推荐将 WAF/CDN 作为第一层防护，服务端限流与响应读取上限作为第二层兜底；两层同时保留，避免旁路流量与误配置风险。
 
 **⚠️ 安全警告：HTTP URL 配置**
 
@@ -674,6 +634,35 @@ Invalid base URL: invalid url scheme: http
 - 强制仅允许 TLS 出站
 - 在反向代理层移除敏感响应头
 
+#### OpenAI Responses WebSocket 入站限制
+
+`gateway.openai_ws` 用于限制面向客户端的 Responses WebSocket 会话存续时间和总数。这些保护措施独立于按轮次计算的用户和账号并发槽位，后者会在每轮结束后释放。
+
+```yaml
+gateway:
+  openai_ws:
+    # 接收并解压客户端首条消息的总超时时间。
+    client_first_message_timeout_seconds: 30
+    # 关闭在已完成轮次之间空闲的客户端连接；0 表示禁用此保护。
+    ingress_inter_turn_idle_timeout_seconds: 300
+    # 活跃客户端入站会话的分布式 API Key 限制；0 表示禁用。
+    max_ingress_connections_per_api_key: 64
+```
+
+首条消息超时是一个总读取截止时间。如果部署需要在较慢链路上接收大上下文或包含大量图片的请求，可将其提高到 120-300 秒。该超时在 HTTP 桥接路由前触发，因此桥接模式不会覆盖此限制。
+
+连接数上限通过 Redis 的 60 秒租约进行协调，租约每 20 秒刷新一次。如果某个进程在完整租约周期内无法确认租约，它会关闭本地 WebSocket，而不是在全局上限之外继续运行。
+
+在选择 `http_bridge` 等账号级 WebSocket 模式前，请先启用 v2 模式路由器：
+
+```yaml
+gateway:
+  openai_ws:
+    mode_router_v2_enabled: true
+```
+
+也可在环境变量中设置 `GATEWAY_OPENAI_WS_MODE_ROUTER_V2_ENABLED=true`。在灰度发布或缓解上游 WebSocket 问题时，可使用 `http_bridge` 实现客户端 WebSocket/上游 HTTP 运行模式。
+
 #### ⚠️ 重要：创建管理员账号
 
 初始管理员账号**只能通过 setup 向导创建**（首次启动时访问 `http://<host>:8080`）。`config.yaml` 中的 `default.admin_email` / `default.admin_password` 字段**不会被用来创建管理员**——它们只是出于历史原因保留在模板里。
@@ -696,29 +685,6 @@ Invalid base URL: invalid url scheme: http
 ```bash
 # 6. 运行应用
 ./sub2api
-```
-
-#### HTTP/2 (h2c) 与 HTTP/1.1 回退
-
-后端明文端口默认支持 h2c，并保留 HTTP/1.1 回退用于 WebSocket 与旧客户端。浏览器通常不支持 h2c，性能收益主要在反向代理或内网链路。
-
-**反向代理示例（Caddy）：**
-
-```caddyfile
-transport http {
-	versions h2c h1
-}
-```
-
-**验证：**
-
-```bash
-# h2c prior knowledge
-curl --http2-prior-knowledge -I http://localhost:8080/health
-# HTTP/1.1 回退
-curl --http1.1 -I http://localhost:8080/health
-# WebSocket 回退验证（需管理员 token）
-websocat -H="Sec-WebSocket-Protocol: sub2api-admin, jwt.<ADMIN_TOKEN>" ws://localhost:8080/api/v1/admin/ops/ws/qps
 ```
 
 #### 开发模式

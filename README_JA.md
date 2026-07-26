@@ -252,7 +252,7 @@ GitHub Releases からビルド済みバイナリをダウンロードするワ�
 #### インストール手順
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/guoluyuan/sub2api/main/deploy/install.sh | sudo bash
 ```
 
 スクリプトは以下を実行します:
@@ -302,7 +302,7 @@ sudo journalctl -u sub2api -f
 sudo systemctl restart sub2api
 
 # アンインストール
-curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/install.sh | sudo bash -s -- uninstall -y
+curl -sSL https://raw.githubusercontent.com/guoluyuan/sub2api/main/deploy/install.sh | sudo bash -s -- uninstall -y
 ```
 
 ---
@@ -325,7 +325,7 @@ PostgreSQL と Redis のコンテナを含む Docker Compose でデプロイし�
 mkdir -p sub2api-deploy && cd sub2api-deploy
 
 # デプロイ準備スクリプトをダウンロードして実行
-curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/docker-deploy.sh | bash
+curl -sSL https://raw.githubusercontent.com/guoluyuan/sub2api/main/deploy/docker-deploy.sh | bash
 
 # サービスを起動
 docker compose up -d
@@ -347,7 +347,7 @@ docker compose logs -f sub2api
 
 ```bash
 # 1. リポジトリをクローン
-git clone https://github.com/Wei-Shaw/sub2api.git
+git clone https://github.com/guoluyuan/sub2api.git
 cd sub2api/deploy
 
 # 2. 環境設定ファイルをコピー
@@ -477,7 +477,7 @@ rm -rf data/ postgres_data/ redis_data/
 Apple シリコン搭載 Mac と macOS 26 では、Apple `container` 1.1.0 以降を使用して Sub2API、PostgreSQL、Redis の完全なスタックを実行できます:
 
 ```bash
-git clone https://github.com/Wei-Shaw/sub2api.git
+git clone https://github.com/guoluyuan/sub2api.git
 cd sub2api/deploy
 ./apple-container.sh init
 ./apple-container.sh up
@@ -503,7 +503,7 @@ cd sub2api/deploy
 
 ```bash
 # 1. リポジトリをクローン
-git clone https://github.com/Wei-Shaw/sub2api.git
+git clone https://github.com/guoluyuan/sub2api.git
 cd sub2api
 
 # 2. pnpm をインストール（未インストールの場合）
@@ -547,6 +547,7 @@ database:
 redis:
   host: "localhost"
   port: 6379
+  username: ""
   password: ""
 
 jwt:
@@ -627,6 +628,35 @@ URL バリデーションまたはレスポンスヘッダーフィルタリン�
 - プライベート/ループバック/リンクローカル範囲をブロック
 - TLS のみのアウトバウンドトラフィックを強制
 - プロキシで機密性の高い上流レスポンスヘッダーを除去
+
+#### OpenAI Responses WebSocket 受信制限
+
+`gateway.openai_ws` は、クライアント向け Responses WebSocket セッションの存続時間と合計数を制限します。これらの保護機能は、ターン間で解放されるターン単位のユーザーおよびアカウント並列実行スロットとは独立して適用されます。
+
+```yaml
+gateway:
+  openai_ws:
+    # 最初のクライアントメッセージを受信し、展開するまでの合計タイムアウト。
+    client_first_message_timeout_seconds: 30
+    # 完了済みターンの間でアイドル状態のクライアントソケットを閉じる。0 で無効。
+    ingress_inter_turn_idle_timeout_seconds: 300
+    # クライアントのアクティブな受信セッションに対する分散 API キー制限。0 で無効。
+    max_ingress_connections_per_api_key: 64
+```
+
+最初のメッセージのタイムアウトは、合計読み取り期限です。低速なリンク上で大きなコンテキストや画像の多いリクエストを受け入れるデプロイでは、120〜300 秒に引き上げられます。この期限は HTTP ブリッジのルーティング前に到達するため、ブリッジモードで上書きされません。
+
+接続上限は、60 秒の Redis リースで協調され、20 秒ごとに更新されます。プロセスがリースの全期間にわたってリースを確認できない場合、グローバル上限を超えて続行する代わりに、ローカル WebSocket を閉じます。
+
+`http_bridge` などのアカウントレベルの WebSocket モードを選択する前に、v2 モードルーターを有効にしてください:
+
+```yaml
+gateway:
+  openai_ws:
+    mode_router_v2_enabled: true
+```
+
+または、環境変数で `GATEWAY_OPENAI_WS_MODE_ROUTER_V2_ENABLED=true` を設定します。ロールアウト中や上流 WebSocket の問題を緩和する際は、クライアント WebSocket/上流 HTTP 運用に `http_bridge` を使用します。
 
 #### ⚠️ 重要：管理者アカウントの作成
 
