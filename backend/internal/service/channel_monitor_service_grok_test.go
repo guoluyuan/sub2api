@@ -2,7 +2,15 @@
 
 package service
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/Wei-Shaw/sub2api/internal/config"
+)
+
+func newChannelMonitorUpdateTestService() *ChannelMonitorService {
+	return NewChannelMonitorService(nil, nil, &config.Config{})
+}
 
 func TestApplyMonitorUpdate_ProviderOnlySwitchToGrokUsesDefaultModel(t *testing.T) {
 	grok := MonitorProviderGrok
@@ -13,7 +21,7 @@ func TestApplyMonitorUpdate_ProviderOnlySwitchToGrokUsesDefaultModel(t *testing.
 		IntervalSeconds: 60,
 	}
 
-	err := applyMonitorUpdate(existing, ChannelMonitorUpdateParams{Provider: &grok})
+	err := newChannelMonitorUpdateTestService().applyMonitorUpdate(existing, ChannelMonitorUpdateParams{Provider: &grok})
 	if err != nil {
 		t.Fatalf("provider-only switch to Grok failed: %v", err)
 	}
@@ -35,7 +43,7 @@ func TestApplyMonitorUpdate_SwitchToGrokPreservesExplicitModel(t *testing.T) {
 		IntervalSeconds: 60,
 	}
 
-	err := applyMonitorUpdate(existing, ChannelMonitorUpdateParams{
+	err := newChannelMonitorUpdateTestService().applyMonitorUpdate(existing, ChannelMonitorUpdateParams{
 		Provider:     &grok,
 		PrimaryModel: &explicitModel,
 	})
@@ -56,7 +64,7 @@ func TestApplyMonitorUpdate_SameGrokProviderDoesNotResetExistingModel(t *testing
 		IntervalSeconds: 60,
 	}
 
-	err := applyMonitorUpdate(existing, ChannelMonitorUpdateParams{Provider: &grok})
+	err := newChannelMonitorUpdateTestService().applyMonitorUpdate(existing, ChannelMonitorUpdateParams{Provider: &grok})
 	if err != nil {
 		t.Fatalf("same-provider Grok update failed: %v", err)
 	}
@@ -75,7 +83,7 @@ func TestApplyMonitorUpdate_SwitchToGrokRejectsResponsesMode(t *testing.T) {
 		IntervalSeconds: 60,
 	}
 
-	err := applyMonitorUpdate(existing, ChannelMonitorUpdateParams{
+	err := newChannelMonitorUpdateTestService().applyMonitorUpdate(existing, ChannelMonitorUpdateParams{
 		Provider: &grok,
 		APIMode:  &responses,
 	})

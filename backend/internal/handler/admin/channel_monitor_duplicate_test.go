@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -85,7 +86,7 @@ func setupDuplicateChannelMonitorRouter(t *testing.T) (*gin.Engine, *duplicateCh
 			BodyOverrideMode: service.MonitorBodyOverrideModeOff,
 		},
 	}
-	monitorService := service.NewChannelMonitorService(repo, duplicateChannelMonitorHandlerEncryptor{})
+	monitorService := service.NewChannelMonitorService(repo, duplicateChannelMonitorHandlerEncryptor{}, &config.Config{})
 	handler := NewChannelMonitorHandler(monitorService)
 
 	gin.SetMode(gin.TestMode)

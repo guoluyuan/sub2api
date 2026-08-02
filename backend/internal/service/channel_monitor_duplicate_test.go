@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -136,7 +137,7 @@ func TestDuplicateChannelMonitorCopiesConfigurationAndResetsRuntimeState(t *test
 		},
 	}
 	repo := &duplicateChannelMonitorRepoStub{source: source}
-	service := NewChannelMonitorService(repo, &duplicateChannelMonitorEncryptor{})
+	service := NewChannelMonitorService(repo, &duplicateChannelMonitorEncryptor{}, &config.Config{})
 
 	duplicate, err := service.Duplicate(context.Background(), source.ID, 77, "admin:77", "copy-primary")
 
@@ -188,7 +189,7 @@ func TestDuplicateChannelMonitorNamePreservesSuffixWithinSchemaLimit(t *testing.
 func TestDuplicateChannelMonitorRejectsUndecryptableAPIKey(t *testing.T) {
 	source := &ChannelMonitor{ID: 42, Name: "broken", APIKey: "OLD:broken"}
 	repo := &duplicateChannelMonitorRepoStub{source: source}
-	service := NewChannelMonitorService(repo, &duplicateChannelMonitorEncryptor{decryptErr: errors.New("wrong encryption key")})
+	service := NewChannelMonitorService(repo, &duplicateChannelMonitorEncryptor{decryptErr: errors.New("wrong encryption key")}, &config.Config{})
 
 	duplicate, err := service.Duplicate(context.Background(), source.ID, 77, "admin:77", "copy-broken")
 
@@ -211,7 +212,7 @@ func TestDuplicateChannelMonitorRecoversCommittedCopyForSameOperation(t *testing
 		BodyOverrideMode: MonitorBodyOverrideModeOff,
 	}
 	repo := &duplicateChannelMonitorRepoStub{source: source}
-	service := NewChannelMonitorService(repo, &duplicateChannelMonitorEncryptor{})
+	service := NewChannelMonitorService(repo, &duplicateChannelMonitorEncryptor{}, &config.Config{})
 
 	first, err := service.Duplicate(context.Background(), source.ID, 77, "admin:77", "stable-key")
 	require.NoError(t, err)
