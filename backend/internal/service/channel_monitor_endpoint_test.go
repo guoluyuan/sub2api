@@ -20,7 +20,7 @@ func TestValidateMonitorEndpoint_BasePath(t *testing.T) {
 		"https://8.8.8.8/tenant%2Fone/anthropic",
 	} {
 		t.Run(endpoint, func(t *testing.T) {
-			require.NoError(t, validateEndpoint(endpoint))
+			require.NoError(t, validateEndpoint(endpoint, endpointValidationOptions{}))
 		})
 	}
 
@@ -39,7 +39,7 @@ func TestValidateMonitorEndpoint_BasePath(t *testing.T) {
 		{"https:///anthropic", ErrChannelMonitorInvalidEndpoint},
 	} {
 		t.Run(tc.endpoint, func(t *testing.T) {
-			require.ErrorIs(t, validateEndpoint(tc.endpoint), tc.want)
+			require.ErrorIs(t, validateEndpoint(tc.endpoint, endpointValidationOptions{}), tc.want)
 		})
 	}
 }
@@ -84,6 +84,9 @@ func TestCallProvider_BasePath(t *testing.T) {
 		{"openai responses version", MonitorProviderOpenAI, MonitorAPIModeResponses, "/relay/v1", "/relay/v1/responses"},
 		{"gemini version", MonitorProviderGemini, "", "/relay/v1beta", "/relay/v1beta/models/test-model:generateContent"},
 		{"zhipu version", MonitorProviderZhipu, "", "/api/paas/v4", "/api/paas/v4/chat/completions"},
+		{"zhipu coding plan", MonitorProviderZhipu, "", "/api/coding/paas/v4", "/api/coding/paas/v4/chat/completions"},
+		{"zhipu relay origin", MonitorProviderZhipu, "", "", "/v1/chat/completions"},
+		{"zhipu relay version", MonitorProviderZhipu, "", "/relay/v1", "/relay/v1/chat/completions"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, _, status, err := callProvider(context.Background(), tc.provider,
@@ -93,4 +96,37 @@ func TestCallProvider_BasePath(t *testing.T) {
 			require.Equal(t, tc.wantPath, <-requests)
 		})
 	}
+}
+
+func TestCallProvider_PrivateHostConfigured(t *testing.T) {
+	requests := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- r.RequestURI
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("{}"))
+	}))
+	t.Cleanup(server.Close)
+
+	_, _, status, err := callProvider(context.Background(), MonitorProviderZhipu,
+		server.URL+"/relay/v1", "test-key", "test-model", "hello",
+		&CheckOptions{AllowPrivateHosts: true})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, status)
+	require.Equal(t, "/relay/v1/chat/completions", <-requests)
+}
+
+func TestMonitorRequestPath_Zhipu(t *testing.T) {
+	adapter := providerAdapters[MonitorProviderZhipu]
+	for endpoint, want := range map[string]string{
+		"https://open.bigmodel.cn":                    providerZhipuPath,
+		"https://api.z.ai":                            providerZhipuPath,
+		"https://open.bigmodel.cn/api/coding/paas/v4": "/chat/completions",
+		"https://birdapi.up.railway.app":              providerOpenAIPath,
+		"https://notbigmodel.cn":                      providerOpenAIPath,
+		"https://relay.example.com/v1":                providerOpenAIPath,
+	} {
+		require.Equal(t, want, monitorRequestPath(MonitorProviderZhipu, endpoint, adapter, "glm-5.3-flash"), endpoint)
+	}
+	require.Equal(t, providerOpenAIPath,
+		monitorRequestPath(MonitorProviderDeepseek, "https://birdapi.up.railway.app", providerAdapters[MonitorProviderDeepseek], "m"))
 }
